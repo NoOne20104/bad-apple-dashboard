@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>Bad Apple Dashboard</title>
 
   <style>
@@ -40,24 +41,6 @@
       border-radius: 16px;
       padding: 24px;
       margin-bottom: 20px;
-    }
-
-    .entry {
-      background: #1b1e27;
-      border: 1px solid #493039;
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 14px;
-    }
-
-    .entry h3 {
-      margin-top: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .entry-content {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
     }
 
     input {
@@ -103,6 +86,14 @@
     #message,
     #historyStatus {
       overflow-wrap: anywhere;
+    }
+
+    .status {
+      background: #1b1518;
+      border: 1px solid #493039;
+      border-radius: 10px;
+      padding: 14px;
+      margin-top: 16px;
     }
   </style>
 </head>
@@ -163,19 +154,23 @@
       </section>
 
       <section class="card">
-        <h2>Saved History</h2>
+        <h2>Remote History</h2>
 
         <p class="muted">
-          View history available in your cloud account.
+          Send a history request to your Android device.
+          Your device must be signed in and have
+          Remote Sync enabled to handle the request.
         </p>
 
         <button id="getLogButton" type="button">
           Get Log
         </button>
 
-        <p id="historyStatus" class="muted" role="status">
-          Click Get Log to load your history.
-        </p>
+        <div class="status">
+          <p id="historyStatus" class="muted" role="status">
+            Click Get Log to send a request.
+          </p>
+        </div>
 
         <div id="historyResults"></div>
       </section>
@@ -184,7 +179,7 @@
 
   </main>
 
-  <!-- SUPABASE LIBRARY -->
+  <!-- SUPABASE -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <script>
@@ -223,11 +218,10 @@
     const historyResults =
       document.getElementById("historyResults");
 
-    // Clear records whenever the account changes
     function clearHistory() {
       historyResults.replaceChildren();
       historyStatus.textContent =
-        "Click Get Log to load your history.";
+        "Click Get Log to send a request.";
     }
 
     function showLoggedOut() {
@@ -245,7 +239,7 @@
         user.email || "Signed in";
     }
 
-    // Check existing login session
+    // Restore login session
     async function checkSession() {
       try {
         const { data, error } =
@@ -308,7 +302,8 @@
         getLogButton.disabled = true;
 
         try {
-          const { error } = await client.auth.signOut();
+          const { error } =
+            await client.auth.signOut();
 
           if (error) {
             alert(error.message);
@@ -321,11 +316,13 @@
         }
       });
 
-    // Load existing cloud history
+    // Send request to Supabase
     async function getLog() {
       getLogButton.disabled = true;
-      historyStatus.textContent = "Loading history...";
       historyResults.replaceChildren();
+
+      historyStatus.textContent =
+        "Sending request to your phone...";
 
       try {
         const { data: userData, error: userError } =
@@ -338,75 +335,41 @@
 
         const requestedUserId = userData.user.id;
 
-        const { data, error } = await client
-          .from("saved_logs")
-          .select(
-            "id, source_app, content, recorded_at"
-          )
-          .eq("user_id", requestedUserId)
-          .order("recorded_at", {
-            ascending: false
-          })
-          .limit(500);
+        const { data: request, error } =
+          await client
+            .from("sync_requests")
+            .insert({
+              user_id: requestedUserId,
+              status: "pending"
+            })
+            .select("id")
+            .single();
 
         if (error) {
           throw error;
         }
 
-        // Avoid showing results after an account switch
         const { data: latestUser } =
           await client.auth.getUser();
 
-        if (
-          latestUser.user?.id !== requestedUserId
-        ) {
+        if (latestUser.user?.id !== requestedUserId) {
           clearHistory();
           return;
         }
 
-        if (!data || data.length === 0) {
-          historyStatus.textContent =
-            "No cloud history available.";
-          return;
-        }
-
         historyStatus.textContent =
-          `Showing ${data.length} saved records` +
-          (data.length === 500
-            ? " (first 500 only)."
-            : ".");
+          "Request created successfully. " +
+          "Waiting for your Android app to receive " +
+          "and approve it.";
 
-        for (const entry of data) {
-          const card =
-            document.createElement("article");
-          card.className = "entry";
+        console.log(
+          "Sync request ID:",
+          request.id
+        );
 
-          const app =
-            document.createElement("h3");
-          app.textContent =
-            entry.source_app || "Unknown app";
-
-          const time =
-            document.createElement("p");
-          time.className = "muted";
-          time.textContent = entry.recorded_at
-            ? new Date(
-                entry.recorded_at
-              ).toLocaleString()
-            : "Unknown time";
-
-          const content =
-            document.createElement("p");
-          content.className = "entry-content";
-          content.textContent =
-            entry.content || "";
-
-          card.append(app, time, content);
-          historyResults.appendChild(card);
-        }
       } catch (error) {
         historyStatus.textContent =
-          "Could not load history: " +
+          "Request failed: " +
           (error.message || "Unknown error");
       } finally {
         getLogButton.disabled = false;
