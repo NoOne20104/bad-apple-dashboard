@@ -14,7 +14,7 @@
     body {
       margin: 0;
       background: #141011;
-      color: white;
+      color: #ffffff;
       font-family: Arial, sans-serif;
     }
 
@@ -30,7 +30,7 @@
     }
 
     main {
-      max-width: 800px;
+      max-width: 850px;
       margin: 40px auto;
       padding: 20px;
     }
@@ -40,6 +40,24 @@
       border-radius: 16px;
       padding: 24px;
       margin-bottom: 20px;
+    }
+
+    .entry {
+      background: #1b1e27;
+      border: 1px solid #493039;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 14px;
+    }
+
+    .entry h3 {
+      margin-top: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .entry-content {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     input {
@@ -62,8 +80,7 @@
       padding: 12px 20px;
       font-weight: bold;
       cursor: pointer;
-      margin-right: 8px;
-      margin-bottom: 8px;
+      margin: 4px 8px 8px 0;
     }
 
     button:hover:not(:disabled) {
@@ -83,7 +100,8 @@
       display: none;
     }
 
-    #message {
+    #message,
+    #historyStatus {
       overflow-wrap: anywhere;
     }
   </style>
@@ -99,8 +117,9 @@
   <main>
 
     <!-- LOGIN -->
-    <div class="card" id="loginSection">
+    <section class="card" id="loginSection">
       <h2>Cloud Account</h2>
+
       <p class="muted">
         Sign in with the same account as your Android app.
       </p>
@@ -128,39 +147,44 @@
       </form>
 
       <p id="message" class="muted" role="status"></p>
-    </div>
+    </section>
 
     <!-- DASHBOARD -->
     <div id="dashboardSection" class="hidden">
 
-      <div class="card">
+      <section class="card">
         <h2>Connected Account</h2>
+
         <p id="accountEmail" class="muted"></p>
 
-        <button id="logoutButton">
+        <button id="logoutButton" type="button">
           Sign Out
         </button>
-      </div>
+      </section>
 
-      <div class="card">
+      <section class="card">
         <h2>Saved History</h2>
+
         <p class="muted">
-          No history loaded.
+          View history available in your cloud account.
         </p>
 
-        <button disabled>
+        <button id="getLogButton" type="button">
           Get Log
         </button>
 
-        <p class="muted">
-          Remote history retrieval is not connected yet.
+        <p id="historyStatus" class="muted" role="status">
+          Click Get Log to load your history.
         </p>
-      </div>
+
+        <div id="historyResults"></div>
+      </section>
 
     </div>
 
   </main>
 
+  <!-- SUPABASE LIBRARY -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <script>
@@ -190,28 +214,56 @@
     const loginButton =
       document.getElementById("loginButton");
 
+    const getLogButton =
+      document.getElementById("getLogButton");
+
+    const historyStatus =
+      document.getElementById("historyStatus");
+
+    const historyResults =
+      document.getElementById("historyResults");
+
+    // Clear records whenever the account changes
+    function clearHistory() {
+      historyResults.replaceChildren();
+      historyStatus.textContent =
+        "Click Get Log to load your history.";
+    }
+
     function showLoggedOut() {
       loginSection.classList.remove("hidden");
       dashboardSection.classList.add("hidden");
       accountEmail.textContent = "";
+      clearHistory();
     }
 
     function showLoggedIn(user) {
+      clearHistory();
       loginSection.classList.add("hidden");
       dashboardSection.classList.remove("hidden");
-      accountEmail.textContent = user.email || "Signed in";
+      accountEmail.textContent =
+        user.email || "Signed in";
     }
 
+    // Check existing login session
     async function checkSession() {
-      const { data, error } = await client.auth.getUser();
+      try {
+        const { data, error } =
+          await client.auth.getUser();
 
-      if (error || !data.user) {
+        if (error || !data.user) {
+          showLoggedOut();
+        } else {
+          showLoggedIn(data.user);
+        }
+      } catch (error) {
         showLoggedOut();
-      } else {
-        showLoggedIn(data.user);
+        message.textContent =
+          "Unable to check your session.";
       }
     }
 
+    // Sign in
     document.getElementById("loginForm")
       .addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -250,17 +302,118 @@
         }
       });
 
+    // Sign out
     document.getElementById("logoutButton")
       .addEventListener("click", async () => {
-        const { error } = await client.auth.signOut();
+        getLogButton.disabled = true;
 
-        if (error) {
-          alert(error.message);
+        try {
+          const { error } = await client.auth.signOut();
+
+          if (error) {
+            alert(error.message);
+            return;
+          }
+
+          showLoggedOut();
+        } finally {
+          getLogButton.disabled = false;
+        }
+      });
+
+    // Load existing cloud history
+    async function getLog() {
+      getLogButton.disabled = true;
+      historyStatus.textContent = "Loading history...";
+      historyResults.replaceChildren();
+
+      try {
+        const { data: userData, error: userError } =
+          await client.auth.getUser();
+
+        if (userError || !userData.user) {
+          showLoggedOut();
           return;
         }
 
-        showLoggedOut();
-      });
+        const requestedUserId = userData.user.id;
+
+        const { data, error } = await client
+          .from("saved_logs")
+          .select(
+            "id, source_app, content, recorded_at"
+          )
+          .eq("user_id", requestedUserId)
+          .order("recorded_at", {
+            ascending: false
+          })
+          .limit(500);
+
+        if (error) {
+          throw error;
+        }
+
+        // Avoid showing results after an account switch
+        const { data: latestUser } =
+          await client.auth.getUser();
+
+        if (
+          latestUser.user?.id !== requestedUserId
+        ) {
+          clearHistory();
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          historyStatus.textContent =
+            "No cloud history available.";
+          return;
+        }
+
+        historyStatus.textContent =
+          `Showing ${data.length} saved records` +
+          (data.length === 500
+            ? " (first 500 only)."
+            : ".");
+
+        for (const entry of data) {
+          const card =
+            document.createElement("article");
+          card.className = "entry";
+
+          const app =
+            document.createElement("h3");
+          app.textContent =
+            entry.source_app || "Unknown app";
+
+          const time =
+            document.createElement("p");
+          time.className = "muted";
+          time.textContent = entry.recorded_at
+            ? new Date(
+                entry.recorded_at
+              ).toLocaleString()
+            : "Unknown time";
+
+          const content =
+            document.createElement("p");
+          content.className = "entry-content";
+          content.textContent =
+            entry.content || "";
+
+          card.append(app, time, content);
+          historyResults.appendChild(card);
+        }
+      } catch (error) {
+        historyStatus.textContent =
+          "Could not load history: " +
+          (error.message || "Unknown error");
+      } finally {
+        getLogButton.disabled = false;
+      }
+    }
+
+    getLogButton.addEventListener("click", getLog);
 
     checkSession();
   </script>
