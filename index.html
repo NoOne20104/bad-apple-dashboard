@@ -1,0 +1,83 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+  <title>Bad Apple Dashboard</title>
+  <style>
+    body {
+      margin: 0;
+      background: #141011;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background: #24191d;
+      padding: 24px;
+      border-bottom: 1px solid #493039;
+    }
+
+    h1 {
+      margin: 0;
+      color: #e85d6a;
+    }
+
+    main {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: #24191d;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: #e85d6a;
+      color: #141011;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #ff7985;
+    }
+
+    .muted {
+      color: #c4aeb2;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bad Apple</h1>
+    <p class="muted">Web Dashboard</p>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Cloud Account</h2>
+      <p class="muted">
+        Supabase login will be added next.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Saved History</h2>
+      <p class="muted">
+        No history loaded.
+      </p>
+      <button disabled>Get Log</button>
+    </div>
+  </main>
+</body>
+</html>
