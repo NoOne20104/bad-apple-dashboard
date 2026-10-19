@@ -3,10 +3,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bad Apple Dashboard</title>
+
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       background: #141011;
@@ -38,6 +42,18 @@
       margin-bottom: 20px;
     }
 
+    input {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 14px;
+      border: 1px solid #493039;
+      border-radius: 10px;
+      background: #141011;
+      color: white;
+      font-size: 15px;
+    }
+
     button {
       background: #e85d6a;
       color: #141011;
@@ -46,38 +62,208 @@
       padding: 12px 20px;
       font-weight: bold;
       cursor: pointer;
+      margin-right: 8px;
+      margin-bottom: 8px;
     }
 
-    button:hover {
+    button:hover:not(:disabled) {
       background: #ff7985;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .muted {
       color: #c4aeb2;
     }
+
+    .hidden {
+      display: none;
+    }
+
+    #message {
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
+
 <body>
+
   <header>
     <h1>Bad Apple</h1>
     <p class="muted">Web Dashboard</p>
   </header>
 
   <main>
-    <div class="card">
+
+    <!-- LOGIN -->
+    <div class="card" id="loginSection">
       <h2>Cloud Account</h2>
       <p class="muted">
-        Supabase login will be added next.
+        Sign in with the same account as your Android app.
       </p>
+
+      <form id="loginForm">
+        <input
+          type="email"
+          id="email"
+          placeholder="Email address"
+          autocomplete="email"
+          required
+        >
+
+        <input
+          type="password"
+          id="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        >
+
+        <button type="submit" id="loginButton">
+          Sign In
+        </button>
+      </form>
+
+      <p id="message" class="muted" role="status"></p>
     </div>
 
-    <div class="card">
-      <h2>Saved History</h2>
-      <p class="muted">
-        No history loaded.
-      </p>
-      <button disabled>Get Log</button>
+    <!-- DASHBOARD -->
+    <div id="dashboardSection" class="hidden">
+
+      <div class="card">
+        <h2>Connected Account</h2>
+        <p id="accountEmail" class="muted"></p>
+
+        <button id="logoutButton">
+          Sign Out
+        </button>
+      </div>
+
+      <div class="card">
+        <h2>Saved History</h2>
+        <p class="muted">
+          No history loaded.
+        </p>
+
+        <button disabled>
+          Get Log
+        </button>
+
+        <p class="muted">
+          Remote history retrieval is not connected yet.
+        </p>
+      </div>
+
     </div>
+
   </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <script>
+    const SUPABASE_URL =
+      "https://jetdswxcgusiwmgrhuyv.supabase.co";
+
+    const SUPABASE_KEY =
+      "sb_publishable_CH5Bkm2nqFJJaT1PBTOtcw_K9DkVmAE";
+
+    const client = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+    const loginSection =
+      document.getElementById("loginSection");
+
+    const dashboardSection =
+      document.getElementById("dashboardSection");
+
+    const accountEmail =
+      document.getElementById("accountEmail");
+
+    const message =
+      document.getElementById("message");
+
+    const loginButton =
+      document.getElementById("loginButton");
+
+    function showLoggedOut() {
+      loginSection.classList.remove("hidden");
+      dashboardSection.classList.add("hidden");
+      accountEmail.textContent = "";
+    }
+
+    function showLoggedIn(user) {
+      loginSection.classList.add("hidden");
+      dashboardSection.classList.remove("hidden");
+      accountEmail.textContent = user.email || "Signed in";
+    }
+
+    async function checkSession() {
+      const { data, error } = await client.auth.getUser();
+
+      if (error || !data.user) {
+        showLoggedOut();
+      } else {
+        showLoggedIn(data.user);
+      }
+    }
+
+    document.getElementById("loginForm")
+      .addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const email =
+          document.getElementById("email").value.trim();
+
+        const password =
+          document.getElementById("password").value;
+
+        loginButton.disabled = true;
+        message.textContent = "Signing in...";
+
+        try {
+          const { data, error } =
+            await client.auth.signInWithPassword({
+              email,
+              password
+            });
+
+          if (error) {
+            message.textContent = error.message;
+            return;
+          }
+
+          if (data.user) {
+            document.getElementById("password").value = "";
+            message.textContent = "";
+            showLoggedIn(data.user);
+          }
+        } catch (error) {
+          message.textContent =
+            "Unable to connect. Please try again.";
+        } finally {
+          loginButton.disabled = false;
+        }
+      });
+
+    document.getElementById("logoutButton")
+      .addEventListener("click", async () => {
+        const { error } = await client.auth.signOut();
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        showLoggedOut();
+      });
+
+    checkSession();
+  </script>
+
 </body>
 </html>
