@@ -95,6 +95,33 @@
       padding: 14px;
       margin-top: 16px;
     }
+
+    .log-entry {
+      background: #1b1518;
+      border: 1px solid #493039;
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .log-entry h3 {
+      margin: 0 0 8px;
+      color: #e85d6a;
+    }
+
+    .log-entry time {
+      display: block;
+      color: #c4aeb2;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .log-content {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+      font-family: inherit;
+    }
   </style>
 </head>
 
@@ -107,7 +134,6 @@
 
   <main>
 
-    <!-- LOGIN -->
     <section class="card" id="loginSection">
       <h2>Cloud Account</h2>
 
@@ -140,7 +166,6 @@
       <p id="message" class="muted" role="status"></p>
     </section>
 
-    <!-- DASHBOARD -->
     <div id="dashboardSection" class="hidden">
 
       <section class="card">
@@ -158,8 +183,7 @@
 
         <p class="muted">
           Send a history request to your Android device.
-          Your device must be signed in and have
-          Remote Sync enabled to handle the request.
+          Remote Sync must be enabled on your phone.
         </p>
 
         <button id="getLogButton" type="button">
@@ -179,7 +203,6 @@
 
   </main>
 
-  <!-- SUPABASE -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <script>
@@ -218,17 +241,35 @@
     const historyResults =
       document.getElementById("historyResults");
 
+    let activeRequestId = null;
+    let activeUserId = null;
+    let requestTimer = null;
+    let checkingRequest = false;
+
+    function stopChecking() {
+      if (requestTimer !== null) {
+        clearInterval(requestTimer);
+        requestTimer = null;
+      }
+
+      activeRequestId = null;
+      activeUserId = null;
+      checkingRequest = false;
+      getLogButton.disabled = false;
+    }
+
     function clearHistory() {
+      stopChecking();
       historyResults.replaceChildren();
       historyStatus.textContent =
         "Click Get Log to send a request.";
     }
 
     function showLoggedOut() {
+      clearHistory();
       loginSection.classList.remove("hidden");
       dashboardSection.classList.add("hidden");
       accountEmail.textContent = "";
-      clearHistory();
     }
 
     function showLoggedIn(user) {
@@ -239,7 +280,6 @@
         user.email || "Signed in";
     }
 
-    // Restore login session
     async function checkSession() {
       try {
         const { data, error } =
@@ -257,7 +297,6 @@
       }
     }
 
-    // Sign in
     document.getElementById("loginForm")
       .addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -296,28 +335,165 @@
         }
       });
 
-    // Sign out
     document.getElementById("logoutButton")
       .addEventListener("click", async () => {
-        getLogButton.disabled = true;
+        stopChecking();
 
         try {
           const { error } =
             await client.auth.signOut();
 
           if (error) {
-            alert(error.message);
+            historyStatus.textContent = error.message;
             return;
           }
 
           showLoggedOut();
-        } finally {
-          getLogButton.disabled = false;
+        } catch (error) {
+          historyStatus.textContent =
+            "Could not sign out.";
         }
       });
 
-    // Send request to Supabase
+    function displayLogs(logs) {
+      historyResults.replaceChildren();
+
+      if (!logs.length) {
+        historyStatus.textContent =
+          "Request completed. No saved logs were found.";
+        return;
+      }
+
+      historyStatus.textContent =
+        "Request completed. Showing " +
+        logs.length +
+        " saved log(s).";
+
+      for (const log of logs) {
+        const entry = document.createElement("article");
+        entry.className = "log-entry";
+
+        const heading = document.createElement("h3");
+        heading.textContent =
+          log.source_app || "Unknown app";
+
+        const date = document.createElement("time");
+
+        if (log.recorded_at) {
+          const parsed = new Date(log.recorded_at);
+
+          date.textContent = Number.isNaN(parsed.getTime())
+            ? log.recorded_at
+            : parsed.toLocaleString();
+        } else {
+          date.textContent = "Date unavailable";
+        }
+
+        const content = document.createElement("pre");
+        content.className = "log-content";
+        content.textContent = log.content || "";
+
+        entry.append(heading, date, content);
+        historyResults.appendChild(entry);
+      }
+    }
+
+    async function loadLogs(userId) {
+      const { data, error } = await client
+        .from("saved_logs")
+        .select("id, source_app, content, recorded_at")
+        .eq("user_id", userId)
+        .order("recorded_at", {
+          ascending: false
+        })
+        .limit(1000);
+
+      if (error) {
+        throw error;
+      }
+
+      displayLogs(data || []);
+    }
+
+    async function checkRequestStatus(requestId, userId) {
+      if (checkingRequest) {
+        return;
+      }
+
+      if (activeRequestId !== requestId) {
+        return;
+      }
+
+      checkingRequest = true;
+
+      try {
+        const { data: userData } =
+          await client.auth.getUser();
+
+        if (userData.user?.id !== userId) {
+          showLoggedOut();
+          return;
+        }
+
+        const { data: request, error } = await client
+          .from("sync_requests")
+          .select("status")
+          .eq("id", requestId)
+          .eq("user_id", userId)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        if (activeRequestId !== requestId) {
+          return;
+        }
+
+        switch (request.status) {
+          case "pending":
+            historyStatus.textContent =
+              "Waiting for approval on your Android phone...";
+            break;
+
+          case "approved":
+            historyStatus.textContent =
+              "Approved. Waiting for upload to finish...";
+            break;
+
+          case "declined":
+            stopChecking();
+            historyStatus.textContent =
+              "Request declined on your phone.";
+            break;
+
+          case "completed":
+            stopChecking();
+            historyStatus.textContent =
+              "Upload completed. Loading logs...";
+
+            await loadLogs(userId);
+            break;
+
+          default:
+            historyStatus.textContent =
+              "Request status: " + request.status;
+        }
+
+      } catch (error) {
+        if (activeRequestId === requestId) {
+          historyStatus.textContent =
+            "Could not check request: " +
+            (error.message || "Unknown error");
+        }
+      } finally {
+        checkingRequest = false;
+      }
+    }
+
     async function getLog() {
+      stopChecking();
+
       getLogButton.disabled = true;
       historyResults.replaceChildren();
 
@@ -333,13 +509,13 @@
           return;
         }
 
-        const requestedUserId = userData.user.id;
+        const userId = userData.user.id;
 
         const { data: request, error } =
           await client
             .from("sync_requests")
             .insert({
-              user_id: requestedUserId,
+              user_id: userId,
               status: "pending"
             })
             .select("id")
@@ -349,30 +525,24 @@
           throw error;
         }
 
-        const { data: latestUser } =
-          await client.auth.getUser();
-
-        if (latestUser.user?.id !== requestedUserId) {
-          clearHistory();
-          return;
-        }
+        activeRequestId = request.id;
+        activeUserId = userId;
 
         historyStatus.textContent =
-          "Request created successfully. " +
-          "Waiting for your Android app to receive " +
-          "and approve it.";
+          "Request sent. Waiting for your phone...";
 
-        console.log(
-          "Sync request ID:",
-          request.id
-        );
+        requestTimer = setInterval(() => {
+          checkRequestStatus(request.id, userId);
+        }, 3000);
+
+        await checkRequestStatus(request.id, userId);
 
       } catch (error) {
+        stopChecking();
+
         historyStatus.textContent =
           "Request failed: " +
           (error.message || "Unknown error");
-      } finally {
-        getLogButton.disabled = false;
       }
     }
 
