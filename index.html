@@ -182,8 +182,8 @@
         <h2>Remote History</h2>
 
         <p class="muted">
-          Send a history request to your Android device.
-          Remote Sync must be enabled on your phone.
+          Request your saved activity history from Android.
+          Remote Sync must be enabled on your phone. Background checks may take 15 minutes or longer.
         </p>
 
         <button id="getLogButton" type="button">
@@ -453,18 +453,18 @@
         switch (request.status) {
           case "pending":
             historyStatus.textContent =
-              "Waiting for approval on your Android phone...";
+              "Waiting for the next Android background sync (usually 15 minutes or longer)...";
             break;
 
           case "approved":
             historyStatus.textContent =
-              "Approved. Waiting for upload to finish...";
+              "Android is processing the request...";
             break;
 
           case "declined":
             stopChecking();
             historyStatus.textContent =
-              "Request declined on your phone.";
+              "Request declined.";
             break;
 
           case "completed":
@@ -498,7 +498,7 @@
       historyResults.replaceChildren();
 
       historyStatus.textContent =
-        "Sending request to your phone...";
+        "Creating background sync request...";
 
       try {
         const { data: userData, error: userError } =
@@ -529,7 +529,7 @@
         activeUserId = userId;
 
         historyStatus.textContent =
-          "Request sent. Waiting for your phone...";
+          "Request sent. Waiting for Android background sync...";
 
         requestTimer = setInterval(() => {
           checkRequestStatus(request.id, userId);
